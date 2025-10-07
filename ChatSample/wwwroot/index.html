@@ -1,0 +1,179 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>Real-Time Sensor Dashboard</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            background: #f4f6f8;
+        }
+
+        header {
+            background: #1976d2;
+            color: white;
+            text-align: center;
+            padding: 10px;
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        #controls {
+            background: #e3f2fd;
+            padding: 10px;
+            text-align: center;
+            border-bottom: 1px solid #ccc;
+        }
+
+        button {
+            padding: 8px 15px;
+            margin: 5px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            color: white;
+        }
+
+        #startBtn {
+            background-color: #43a047;
+        }
+
+        #stopBtn {
+            background-color: #e53935;
+        }
+
+        #stats {
+            text-align: center;
+            background: #bbdefb;
+            padding: 8px;
+            font-size: 18px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        #chartContainer {
+            flex: 1;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+    </style>
+</head>
+<body>
+    <header>📊 Real-Time Sensor Dashboard</header>
+
+    <div id="controls">
+        <button id="startBtn">Start Stream</button>
+        <button id="stopBtn" disabled>Stop Stream</button>
+        <span id="status" style="margin-left:15px;font-weight:bold;">Disconnected</span>
+    </div>
+
+    <div id="stats">
+        Total Data Points: <span id="dataCount">0</span>
+    </div>
+
+    <div id="chartContainer">
+        <canvas id="sensorChart"></canvas>
+    </div>
+
+    <!-- SignalR + Chart.js -->
+    <script src="lib/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        // Initialize SignalR connection
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl('/chat')
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+
+        // Chart.js setup
+        const ctx = document.getElementById('sensorChart').getContext('2d');
+        const dataPoints = [];
+        const maxPoints = 100000;
+        let totalCount = 0;
+        let streaming = false;
+        let intervalId = null;
+
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Sensor Values (1–10)',
+                    data: [],
+                    borderColor: 'rgba(25,118,210,0.9)',
+                    borderWidth: 1.5,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                scales: {
+                    x: { display: false },
+                    y: { min: 0, max: 10 }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        // Receive array of sensor data
+        connection.on('ReceiveBatch', (name, values) => {
+            if (Array.isArray(values)) {
+                dataPoints.push(...values);
+                totalCount += values.length;
+
+                if (dataPoints.length > maxPoints) {
+                    dataPoints.splice(0, dataPoints.length - maxPoints);
+                }
+
+                chart.data.labels = dataPoints.map((_, i) => i);
+                chart.data.datasets[0].data = dataPoints;
+                chart.update('none');
+
+                document.getElementById('dataCount').textContent = totalCount.toLocaleString();
+            }
+        });
+
+        // Connect to hub
+        connection.start().then(() => {
+            document.getElementById('status').textContent = "Connected ✅";
+        }).catch(err => {
+            console.error(err.toString());
+        });
+
+        // Start streaming data
+        document.getElementById('startBtn').addEventListener('click', () => {
+            if (streaming) return;
+            streaming = true;
+
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+
+            intervalId = setInterval(() => {
+                const values = Array.from({ length: 1000 }, () => Math.floor(Math.random() * 100) + 1);
+                connection.invoke('send', 'SensorSimulator', values)
+                    .catch(err => console.error(err.toString()));
+            }, 1000);
+        });
+
+        // Stop streaming
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            streaming = false;
+            clearInterval(intervalId);
+            intervalId = null;
+
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            console.log("🛑 Streaming stopped.");
+        });
+    </script>
+</body>
+</html>

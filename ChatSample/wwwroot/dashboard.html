@@ -1,0 +1,75 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <title>SignalR Real-Time Dashboard</title>
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+        }
+
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+    </style>
+</head>
+<body>
+    <h2>Real-Time Sensor Dashboard</h2>
+    <canvas id="sensorChart"></canvas>
+
+    <script src="lib/signalr.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl('/chat')
+            .configureLogging(signalR.LogLevel.Information)
+            .build();
+
+        const ctx = document.getElementById('sensorChart').getContext('2d');
+        const dataPoints = [];
+        const maxPoints = 100000; // Display last 100000 readings
+
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Sensor Values (1–100)',
+                    data: [],
+                    borderColor: 'blue',
+                    borderWidth: 1,
+                    pointRadius: 0
+                }]
+            },
+            options: {
+                animation: false,
+                scales: {
+                    x: { display: false },
+                    y: { min: 0, max: 100 }
+                }
+            }
+        });
+
+        // Receive values from SignalR
+        connection.on('broadcastMessage', (name, message) => {
+            const value = parseInt(message);
+            if (!isNaN(value)) {
+                dataPoints.push(value);
+
+                // Keep only last 100000 points
+                if (dataPoints.length > maxPoints) dataPoints.shift();
+
+                // Update chart
+                chart.data.labels = dataPoints.map((_, i) => i);
+                chart.data.datasets[0].data = dataPoints;
+                chart.update();
+            }
+        });
+
+        connection.start().then(() => {
+            console.log("📊 Connected to SignalR Hub for dashboard.");
+        }).catch(err => console.error(err));
+    </script>
+</body>
+</html>
